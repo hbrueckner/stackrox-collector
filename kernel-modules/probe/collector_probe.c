@@ -40,6 +40,7 @@
 // clang-format off
 #include "../driver_config.h"
 #include "../ppm_events_public.h"
+#include "../ppm_version.h"
 #include "bpf_helpers.h"
 #include "types.h"
 #include "maps.h"
@@ -185,19 +186,9 @@ COLLECTOR_LEGACY_PROBE();
  *        these args are not available (e.g. fork).
  */
 PROBE_SIGNATURE("sched/", sched_process_fork, sched_process_fork_args) {
-  struct scap_bpf_settings* settings;
   enum ppm_event_type evt_type;
   struct sys_stash_args args;
   unsigned long* argsp;
-
-  settings = get_bpf_settings();
-  if (settings == NULL) {
-    return 0;
-  }
-
-  if (!settings->capture_enabled) {
-    return 0;
-  }
 
   // using the "private" version of this function so we can
   // provide a pid.
@@ -218,7 +209,6 @@ PROBE_SIGNATURE("sched/", sched_process_fork, sched_process_fork_args) {
  *        instead, we defer to the appropriate filler.
  */
 PROBE_SIGNATURE("sched/", sched_process_exit, sched_process_exit_args) {
-  struct scap_bpf_settings* settings = NULL;
   enum ppm_event_type evt_type = PPME_PROCEXIT_1_E;
   struct task_struct* task = NULL;
   unsigned int flags = 0;
@@ -231,16 +221,7 @@ PROBE_SIGNATURE("sched/", sched_process_exit, sched_process_exit_args) {
     return 0;
   }
 
-  settings = get_bpf_settings();
-  if (settings == NULL) {
-    return 0;
-  }
-
-  if (!settings->capture_enabled) {
-    return 0;
-  }
-
-  call_filler(ctx, ctx, evt_type, settings, UF_NEVER_DROP);
+  call_filler(ctx, ctx, evt_type, UF_NEVER_DROP);
   return 0;
 }
 
@@ -378,23 +359,11 @@ struct sys_enter_shutdown_args {
  */
 static __always_inline int enter_probe(long id, struct sys_enter_args* ctx) {
   const struct syscall_evt_pair* sc_evt = NULL;
-  struct scap_bpf_settings* settings = NULL;
   enum ppm_event_type evt_type = PPME_GENERIC_E;
   int drop_flags = UF_ALWAYS_DROP;
   struct sys_enter_args stack_ctx = {.id = id};
 
   if (bpf_in_ia32_syscall()) {
-    return 0;
-  }
-
-  settings = get_bpf_settings();
-  if (settings == NULL) {
-    return 0;
-  }
-
-  if (!settings->capture_enabled) {
-    // capture_enabled is usually false when we have loaded the probe
-    // but not started capturing from a userspace perspective.
     return 0;
   }
 
@@ -591,7 +560,7 @@ static __always_inline int enter_probe(long id, struct sys_enter_args* ctx) {
   //
   // It also handles the stack context problem, so we can pass both
   // pointers through without issue.
-  call_filler(ctx, &stack_ctx, evt_type, settings, drop_flags);
+  call_filler(ctx, &stack_ctx, evt_type, drop_flags);
   return 0;
 }
 
@@ -608,22 +577,10 @@ static __always_inline int enter_probe(long id, struct sys_enter_args* ctx) {
  */
 static __always_inline int exit_probe(long id, struct sys_exit_args* ctx) {
   const struct syscall_evt_pair* sc_evt = NULL;
-  struct scap_bpf_settings* settings = NULL;
   enum ppm_event_type evt_type = PPME_GENERIC_X;
   int drop_flags = UF_ALWAYS_DROP;
 
   if (bpf_in_ia32_syscall()) {
-    return 0;
-  }
-
-  settings = get_bpf_settings();
-  if (settings == NULL) {
-    return 0;
-  }
-
-  if (!settings->capture_enabled) {
-    // capture_enabled is usually false when we have loaded the probe
-    // but not started capturing from a userspace perspective.
     return 0;
   }
 
@@ -653,7 +610,7 @@ static __always_inline int exit_probe(long id, struct sys_exit_args* ctx) {
 
   // the fillers contain syscall specific processing logic, so we simply
   // call into those and let the rest of falco deal with the event.
-  call_filler(ctx, ctx, evt_type, settings, drop_flags);
+  call_filler(ctx, ctx, evt_type, drop_flags);
   return 0;
 }
 
